@@ -38,3 +38,8 @@ _agents/
 docs/
 .agents/rules/deploy.md
 backend/tests/test_agent_api_live.py
+
+# Local working files — not for distribution
+claude-skills/                 # upstream repo used as source for skill import
+tpl.json                      # one-off API probe output
+scripts/__pycache__/          # Python bytecode from running scripts locally

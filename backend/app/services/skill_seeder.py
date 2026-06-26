@@ -948,8 +948,125 @@ To avoid unnecessary deployments, save Vercel build limits, and prevent serving 
 ]
 
 
+async def _discover_skills_from_disk() -> list[dict]:
+    """Auto-discover skills shipped under ``backend/agent_template/builtin_skills/``.
+
+    Each subfolder of ``builtin_skills/`` becomes one Skill row, with all files
+    inside it (recursive, relative paths preserved) loaded as SkillFile rows.
+    Frontmatter ``name`` / ``description`` are parsed from SKILL.md when
+    present; otherwise the folder name is used as the display name.
+
+    Returns an empty list if the directory doesn't exist (e.g. minimal installs).
+    """
+    import re
+    from pathlib import Path as _Path
+
+    builtin_root = _Path(__file__).parent.parent.parent / "agent_template" / "builtin_skills"
+    if not builtin_root.is_dir():
+        return []
+
+    discovered: list[dict] = []
+    # Frontmatter may be preceded by an HTML comment (e.g. provenance header
+    # added by scripts/import_claude_skills.py). Use search, not match.
+    frontmatter_re = re.compile(r"^---\s*\n(.*?)\n---\s*(?:\n|$)", re.DOTALL | re.MULTILINE)
+
+    def _parse_frontmatter(text: str) -> dict:
+        m = frontmatter_re.search(text)
+        if not m:
+            return {}
+        block = m.group(1)
+        try:
+            import yaml  # type: ignore
+            parsed = yaml.safe_load(block) or {}
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            pass
+        # Fallback: flat key:value lines (no nested support)
+        out: dict = {}
+        for line in block.splitlines():
+            if ":" not in line or line.lstrip().startswith("#"):
+                continue
+            key, _, value = line.partition(":")
+            value = value.strip().strip('"').strip("'")
+            if value:
+                out[key.strip()] = value
+        return out
+
+    def _category_icon(fm: dict, folder: str) -> tuple[str, str]:
+        meta = fm.get("metadata") if isinstance(fm.get("metadata"), dict) else {}
+        cat = (meta.get("category") or "").strip() or "general"
+        icon = (meta.get("icon") or "").strip() or "📚"
+        # Fallback: infer category from folder name
+        if cat == "general":
+            folder_lower = folder.lower()
+            for prefix, mapped in (
+                ("c-level", "executive"), ("engineering-team", "engineering"),
+                ("engineering", "engineering"), ("marketing", "marketing"),
+                ("finance", "finance"), ("product", "product"),
+                ("research", "research"), ("compliance", "compliance"),
+                ("ra-qm", "compliance"), ("orchestration", "orchestration"),
+                ("commercial", "commercial"), ("business", "operations"),
+                ("productivity", "productivity"), ("markdown-html", "productivity"),
+            ):
+                if folder_lower.startswith(prefix):
+                    cat = mapped
+                    break
+        return cat, icon
+
+    for skill_dir in sorted(builtin_root.iterdir()):
+        if not skill_dir.is_dir() or skill_dir.name.startswith("."):
+            continue
+        skill_md = skill_dir / "SKILL.md"
+        if not skill_md.is_file():
+            continue
+        try:
+            md_text = skill_md.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            logger.warning(f"[SkillSeeder] cannot read {skill_md}: {exc}")
+            continue
+        fm = _parse_frontmatter(md_text)
+        name = (fm.get("name") or skill_dir.name).strip()
+        desc = (fm.get("description") or "").strip()
+        if len(desc) > 300:
+            desc = desc[:297].rsplit(" ", 1)[0] + "…"
+        category, icon = _category_icon(fm, skill_dir.name)
+
+        # Collect every file under the skill folder (recursive), excluding nothing.
+        files: list[dict] = []
+        for f in sorted(skill_dir.rglob("*")):
+            if not f.is_file():
+                continue
+            rel = f.relative_to(skill_dir).as_posix()
+            try:
+                content = f.read_text(encoding="utf-8", errors="replace")
+            except OSError as exc:
+                logger.warning(f"[SkillSeeder] cannot read {f}: {exc}")
+                continue
+            files.append({"path": rel, "content": content})
+
+        discovered.append({
+            "name": name,
+            "description": desc or f"Skill: {skill_dir.name}",
+            "category": category,
+            "icon": icon,
+            "folder_name": skill_dir.name,
+            "files": files,
+        })
+
+    logger.info(f"[SkillSeeder] Discovered {len(discovered)} skills from {builtin_root}")
+    return discovered
+
+
 async def seed_skills():
-    """Insert builtin skills if they don't exist."""
+    """Insert builtin skills if they don't exist.
+
+    First seeds the hardcoded BUILTIN_SKILLS list (kept for backwards
+    compatibility — these are the skills that ship in the image itself).
+    Then auto-discovers any additional skills placed under
+    ``agent_template/builtin_skills/`` (e.g. the claude-skills import at
+    ``scripts/import_claude_skills.py`` produces output here).
+    """
     from app.services.skill_creator_content import get_skill_creator_files
     from pathlib import Path as _Path
 
@@ -972,8 +1089,12 @@ async def seed_skills():
             else:
                 logger.warning("[SkillSeeder] mcp-installer/SKILL.md not found in agent_template/skills/")
 
+    # Auto-discover additional skills shipped in the image under builtin_skills/
+    extra_skills = await _discover_skills_from_disk()
+    all_skills = list(BUILTIN_SKILLS) + extra_skills
+
     async with async_session() as db:
-        for skill_data in BUILTIN_SKILLS:
+        for skill_data in all_skills:
             result = await db.execute(
                 select(Skill).where(Skill.folder_name == skill_data["folder_name"])
             )
