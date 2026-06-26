@@ -1,0 +1,61 @@
+# .dockerignore — keep Docker build context small and rebuilds fast
+# Without this, `COPY . .` brings in .git/, __pycache__/, etc. and the
+# final `chown -R /app` in backend/Dockerfile walks every file.
+
+# Version control
+.git/
+.gitignore
+.gitattributes
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Node / frontend
+node_modules/
+dist/
+.vite/
+build/
+npm-debug.log*
+
+# Backend runtime data (mounted at runtime, never baked in)
+backend/agent_data/
+backend/data/
+ss-nodes.json
+
+# Upstream working tree (cloned for skill import — not for distribution)
+claude-skills/
+
+# Internal docs
+docs/
+
+# Editor / OS noise
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*.swo
+
+# Test artefacts
+.coverage
+htmlcov/
+.tox/
+
+# Scripts that are local-only (not needed in image)
+scripts/__pycache__/
+
+# Misc
+*.log
+*.zip
+*.tar.gz
+tpl.json
+.env
+.env.local
