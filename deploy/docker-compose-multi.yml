@@ -59,6 +59,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       AGENT_DATA_DIR: /data/agents
       AGENT_TEMPLATE_DIR: /app/agent_template
+      SANDBOX_ALLOW_UNSAFE_FALLBACK_WHEN_BWRAP_MISSING: "true"
       STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
       STORAGE_LOCAL_ROOT: /data/agents
       STORAGE_LOCAL_FALLBACK_ENABLED: ${STORAGE_LOCAL_FALLBACK_ENABLED:-true}
@@ -118,6 +119,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       AGENT_DATA_DIR: /data/agents
       AGENT_TEMPLATE_DIR: /app/agent_template
+      SANDBOX_ALLOW_UNSAFE_FALLBACK_WHEN_BWRAP_MISSING: "true"
       STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
       STORAGE_LOCAL_ROOT: /data/agents
       STORAGE_LOCAL_FALLBACK_ENABLED: ${STORAGE_LOCAL_FALLBACK_ENABLED:-true}
